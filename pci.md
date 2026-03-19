@@ -189,6 +189,50 @@
 136. `[General]` What's the Nextra Network contract/SLA for the IPSec connectivity?
 137. `[General]` Are there any software licenses expiring soon?
 
+## Tagging, Limits & Governance
+
+146. `[General]` Is there a resource tagging standard? Are tags enforced via policy?
+147. `[OCI]` Have any OCI service limits been increased (compute, VCN, LB, DRG attachments)? Which ones?
+148. `[OCI]` Are there OCI quota policies set at the compartment level?
+149. `[OCI]` Are OCI Events and Notification topics configured for any automated responses?
+150. `[General]` Is there a resource naming convention document? Does the existing environment follow it?
+
+## Instance-Level Security
+
+151. `[General]` Are there OS-level firewalls (iptables/firewalld/nftables) configured on instances? Where are the rules documented?
+152. `[General]` Is NTP/time synchronization configured consistently across all instances? What's the source? (Critical for PCI audit log correlation)
+153. `[General]` Are SSH keys rotated? Who has SSH access to production instances?
+154. `[General]` Is there any host-based intrusion detection (OSSEC, Wazuh, etc.)?
+155. `[General]` Are there any local user accounts on instances beyond the default opc/admin?
+
+## Backup & Restore Validation
+
+156. `[General]` Has a backup restore ever been tested? When was the last successful restore test?
+157. `[General]` Are boot volume and block volume backups automated? What's the schedule and retention?
+158. `[OCI]` Are backups cross-region copied for DR (boot volumes, block volumes, DB backups)?
+159. `[General]` Is there a documented restore procedure with estimated RTO per component?
+
+## Egress & Outbound Traffic
+
+160. `[General]` What outbound (egress) traffic is allowed from private subnets? Is there an explicit allow-list?
+161. `[General]` Do instances need to reach external endpoints (package repos, APIs, SaaS tools)? Through NAT or proxy?
+162. `[General]` Is there any egress filtering or inspection (proxy, firewall) for outbound internet traffic?
+163. `[General]` Are there any external API integrations that depend on whitelisted source IPs?
+
+## Network Validation
+
+164. `[General]` Can the outgoing team provide a network path validation (traceroute/MTR) between DC and DR?
+165. `[General]` Has latency between DC Mumbai and DR Hyderabad been measured? What's the baseline?
+166. `[General]` Are there any known network bottlenecks or bandwidth constraints on the IPSec tunnels?
+167. `[OCI]` Is FastConnect used or planned alongside IPSec, or is IPSec the only on-premises link?
+
+## Compliance Tooling
+
+168. `[General]` Is there a CIS benchmark scanner or PCI compliance scanner running regularly (Qualys, Nessus, Prisma, etc.)?
+169. `[General]` Are compliance scan reports available for the last 12 months?
+170. `[General]` Is there an automated compliance-as-code framework (InSpec, Open Policy Agent, etc.)?
+171. `[General]` Who is the QSA (Qualified Security Assessor) for PCI audits? When is the next audit?
+
 ## Documentation & Handover Artifacts
 
 138. `[General]` Beyond these two diagrams, is there any other documentation — HLD, LLD, SOPs, network diagrams with IP details?
@@ -199,3 +243,7 @@
 143. `[General]` Can we schedule a walkthrough session (screen share) of the live environment?
 144. `[General]` Who are the key contacts on the outgoing team for post-handover questions (grace period)?
 145. `[General]` Is there a formal handover sign-off document or checklist?
+
+---
+
+**Total: 171 questions**
