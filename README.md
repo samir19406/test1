@@ -117,31 +117,39 @@ style StateDBN stroke-dasharray: 5 5
 
 ## Baseline Configuration
 
-| Service | Starting Configuration |
-|---------|----------------------|
-| Route 53 | 1 hosted zone, wildcard DNS record |
-| CloudFront | Disabled initially (enable when needed) |
-| AWS WAF | 1 Web ACL with AWS Managed Rules (Core Rule Set + SQL injection + rate limiting) |
-| ACM | 1 wildcard SSL certificate (`*.app.example.com`) |
-| ALB | 1 Application Load Balancer, 2 AZs |
-| ECS Cluster | 1 cluster, EC2 launch type |
-| EC2 Instances (ASG) | 2x `t3.medium` (min), max 4, across 2 AZs |
-| ECS Tasks | 2 tasks (1 per instance), 1 vCPU / 2 GB RAM per task |
-| Aurora Serverless v2 | 1 cluster, min 0.5 ACU / max 8 ACU, PostgreSQL 15, Multi-AZ |
-| NAT Gateway | 1 NAT Gateway (single AZ to start, add second for HA later) |
-| ElastiCache Redis | Disabled initially (enable when caching is needed) |
-| S3 | 1 bucket, versioning enabled, Standard storage class |
-| ECR | 1 private repository, image scanning enabled |
-| SES | Sandbox mode initially, production access requested on go-live |
-| SQS | 1 standard queue |
-| SNS | 1 topic (CloudWatch alerts) |
-| Secrets Manager | 1–2 secrets (DB credentials, API keys) |
-| CloudWatch | Basic monitoring, log groups per ECS service, 1–2 alarms |
-| CloudTrail | Disabled initially (enable for compliance when required) |
-| CodeBuild | 1 build project, `BUILD_GENERAL1_SMALL` compute |
-| VPC | 1 VPC, 2 public subnets + 2 private subnets across 2 AZs |
+> Region: Asia Pacific (Mumbai) — `ap-south-1`. Prices are On-Demand as of March 2026. Actual costs may vary based on usage, data transfer, and applicable discounts (Reserved Instances, Savings Plans). Always verify against the [AWS Pricing Calculator](https://calculator.aws/) before finalizing budgets.
 
-> **Note:** These are baseline starting values for a government project where user volumes are not yet confirmed. All auto-scaling components (ECS Capacity Provider, ASG, Aurora ACUs) will scale up automatically as demand increases. Configuration should be revisited once actual usage patterns are known.
+| Service | Starting Configuration | Unit Price (Mumbai, On-Demand) | Est. Monthly Cost |
+|---------|----------------------|-------------------------------|-------------------|
+| Route 53 | 1 hosted zone, wildcard DNS record | $0.50/month per hosted zone + $0.40 per million queries | ~$1 |
+| CloudFront | Disabled initially (enable when needed) | — | $0 |
+| AWS WAF | 1 Web ACL + 3 managed rule groups (Core, SQLi, rate limiting) | $5.00/month per Web ACL + $1.00/month per rule group + $0.60 per million requests | ~$10 |
+| ACM | 1 wildcard SSL certificate (`*.app.example.com`) | Free (public certs used with ALB/CloudFront) | $0 |
+| ALB | 1 Application Load Balancer, 2 AZs | $0.0252/hour + $0.008 per LCU-hour | ~$20 |
+| ECS Cluster | 1 cluster, EC2 launch type | No additional charge (ECS orchestration is free) | $0 |
+| EC2 Instances (ASG) | 2x `t3.medium` (min), max 4, across 2 AZs | $0.0448/hour per instance | ~$65 (2 instances 24/7) |
+| ECS Tasks | 2 tasks (1 per instance), 1 vCPU / 2 GB RAM per task | Included in EC2 cost | $0 |
+| Aurora Serverless v2 | 1 cluster, min 0.5 ACU / max 8 ACU, PostgreSQL 15, Multi-AZ | $0.12/ACU-hour + $0.115/GB-month storage | ~$50–90 (0.5–1 ACU avg + 20 GB storage) |
+| NAT Gateway | 1 NAT Gateway (single AZ) | $0.045/hour + $0.045 per GB processed | ~$35 + data charges |
+| ElastiCache Redis | Disabled initially (enable when needed) | cache.t3.micro: ~$0.018/hour | $0 (disabled) |
+| S3 | 1 bucket, versioning enabled, Standard storage class | $0.025/GB-month storage + $0.005 per 1K PUT requests | ~$3 (100 GB) |
+| ECR | 1 private repository, image scanning enabled | $0.10/GB-month storage | ~$1 |
+| SES | Sandbox mode initially, production access on go-live | $0.10 per 1,000 emails | ~$1 |
+| SQS | 1 standard queue | $0.40 per million requests (first 1M free) | ~$0 |
+| SNS | 1 topic (CloudWatch alerts) | $0.50 per million publishes + delivery charges | ~$0 |
+| Secrets Manager | 1–2 secrets (DB credentials, API keys) | $0.40/secret/month + $0.05 per 10K API calls | ~$1 |
+| CloudWatch | Basic monitoring, log groups per ECS service, 1–2 alarms | $0.10/alarm + $0.30/custom metric + $0.67/GB log ingestion | ~$5–10 |
+| CloudTrail | Disabled initially (enable for compliance) | — | $0 |
+| CodeBuild | 1 build project, `BUILD_GENERAL1_SMALL` | $0.005/build-minute (Linux) | ~$3 (100 min/month) |
+| VPC | 1 VPC, 2 public subnets + 2 private subnets, 2 AZs | No charge for VPC/subnets | $0 |
+| | | **Estimated Baseline Total** | **~$195–305/month** |
+
+> **Notes:**
+> - These are baseline starting values for a government project where user volumes are not yet confirmed. All auto-scaling components (ECS Capacity Provider, ASG, Aurora ACUs) will scale up automatically as demand increases.
+> - The range depends primarily on Aurora ACU usage and NAT Gateway data processing.
+> - EC2 costs can be reduced ~40–60% with 1-year Reserved Instances or Savings Plans.
+> - SQS and SNS are effectively free at low volumes (1M free requests/month each).
+> - Prices sourced from [AWS Pricing pages](https://aws.amazon.com/pricing/) and [aws-pricing.com](https://aws-pricing.com/ap-south-1.html) for ap-south-1. Verify before committing.
 
 ---
 
