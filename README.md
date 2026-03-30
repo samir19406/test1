@@ -115,6 +115,36 @@ style StateDBN stroke-dasharray: 5 5
 
 ---
 
+## Baseline Configuration
+
+| Service | Starting Configuration |
+|---------|----------------------|
+| Route 53 | 1 hosted zone, wildcard DNS record |
+| CloudFront | Disabled initially (enable when needed) |
+| AWS WAF | 1 Web ACL with AWS Managed Rules (Core Rule Set + SQL injection + rate limiting) |
+| ACM | 1 wildcard SSL certificate (`*.app.example.com`) |
+| ALB | 1 Application Load Balancer, 2 AZs |
+| ECS Cluster | 1 cluster, EC2 launch type |
+| EC2 Instances (ASG) | 2x `t3.medium` (min), max 4, across 2 AZs |
+| ECS Tasks | 2 tasks (1 per instance), 1 vCPU / 2 GB RAM per task |
+| Aurora Serverless v2 | 1 cluster, min 0.5 ACU / max 8 ACU, PostgreSQL 15, Multi-AZ |
+| NAT Gateway | 1 NAT Gateway (single AZ to start, add second for HA later) |
+| ElastiCache Redis | Disabled initially (enable when caching is needed) |
+| S3 | 1 bucket, versioning enabled, Standard storage class |
+| ECR | 1 private repository, image scanning enabled |
+| SES | Sandbox mode initially, production access requested on go-live |
+| SQS | 1 standard queue |
+| SNS | 1 topic (CloudWatch alerts) |
+| Secrets Manager | 1–2 secrets (DB credentials, API keys) |
+| CloudWatch | Basic monitoring, log groups per ECS service, 1–2 alarms |
+| CloudTrail | Disabled initially (enable for compliance when required) |
+| CodeBuild | 1 build project, `BUILD_GENERAL1_SMALL` compute |
+| VPC | 1 VPC, 2 public subnets + 2 private subnets across 2 AZs |
+
+> **Note:** These are baseline starting values for a government project where user volumes are not yet confirmed. All auto-scaling components (ECS Capacity Provider, ASG, Aurora ACUs) will scale up automatically as demand increases. Configuration should be revisited once actual usage patterns are known.
+
+---
+
 ## 3. Request Flow (End to End)
 
 ### Step 1 — DNS Resolution
