@@ -25,6 +25,7 @@ subgraph AWS_Cloud[AWS Cloud]
         subgraph Public_Subnets[Public Subnets]
             ALB[ALB - Distributes traffic]
             NAT[NAT Gateway]
+            EIP[Elastic IP]
         end
 
         subgraph Private_Subnets[Private Subnets]
@@ -81,6 +82,7 @@ ALB -- "4 Routes" --> TG
 TG -- "Routes to tasks" --> ASG
 CP -- Auto scaling --> ASG
 ASG -- Outbound via --> NAT
+EIP -. Attached .-> NAT
 
 %% App to Data Flow
 ASG -- "5 Reads/Writes" --> Aurora_Cluster
@@ -119,36 +121,50 @@ style StateDBN stroke-dasharray: 5 5
 
 > Region: Asia Pacific (Mumbai) — `ap-south-1`. Prices are On-Demand as of March 2026. Actual costs may vary based on usage, data transfer, and applicable discounts (Reserved Instances, Savings Plans). Always verify against the [AWS Pricing Calculator](https://calculator.aws/) before finalizing budgets.
 
-| Service | Starting Configuration | Unit Price (Mumbai, On-Demand) | Est. Monthly Cost |
-|---------|----------------------|-------------------------------|-------------------|
-| Route 53 | 1 hosted zone, wildcard DNS record | $0.50/month per hosted zone + $0.40 per million queries | ~$1 |
-| CloudFront | Disabled initially (enable when needed) | $0.013/GB data transfer out (India) + $0.0095 per 10K requests | $0 (if enabled: ~$15–30 for 1 TB/month) |
-| AWS WAF | 1 Web ACL + 3 managed rule groups (Core, SQLi, rate limiting) | $5.00/month per Web ACL + $1.00/month per rule group + $0.60 per million requests | ~$10 |
-| ACM | 1 wildcard SSL certificate (`*.app.example.com`) | Free (public certs used with ALB/CloudFront) | $0 |
-| ALB | 1 Application Load Balancer, 2 AZs | $0.0252/hour + $0.008 per LCU-hour | ~$20 |
-| ECS Cluster | 1 cluster, EC2 launch type | No additional charge (ECS orchestration is free) | $0 |
-| EC2 Instances (ASG) | 2x `t3.medium` (min), max 4, across 2 AZs | $0.0448/hour per instance | ~$65 (2 instances 24/7) |
-| ECS Tasks | 2 tasks (1 per instance), 1 vCPU / 2 GB RAM per task | Included in EC2 cost | $0 |
-| Aurora Serverless v2 | 1 cluster, min 0.5 ACU / max 8 ACU, PostgreSQL 15, Multi-AZ | $0.12/ACU-hour + $0.115/GB-month storage | ~$50–90 (0.5–1 ACU avg + 20 GB storage) |
-| NAT Gateway | 1 NAT Gateway (single AZ) | $0.045/hour + $0.045 per GB processed | ~$35 + data charges |
-| ElastiCache Redis | Disabled initially (enable when needed) | cache.t3.micro: ~$0.018/hour | $0 (if enabled: ~$13 for 1 node) |
-| S3 | 1 bucket, versioning enabled, Standard storage class | $0.025/GB-month storage + $0.005 per 1K PUT requests | ~$3 (100 GB) |
-| ECR | 1 private repository, image scanning enabled | $0.10/GB-month storage | ~$1 |
-| SES | Sandbox mode initially, production access on go-live | $0.10 per 1,000 emails | ~$1 |
-| SQS | 1 standard queue | $0.40 per million requests (first 1M free) | ~$0 |
-| SNS | 1 topic (CloudWatch alerts) | $0.50 per million publishes + delivery charges | ~$0 |
-| Secrets Manager | 1–2 secrets (DB credentials, API keys) | $0.40/secret/month + $0.05 per 10K API calls | ~$1 |
-| CloudWatch | Basic monitoring, log groups per ECS service, 1–2 alarms | $0.10/alarm + $0.30/custom metric + $0.67/GB log ingestion | ~$5–10 |
-| CloudTrail | Disabled initially (enable for compliance) | First trail free (mgmt events) + $2.00 per 100K data events | $0 (if enabled: ~$2–5 for mgmt events + S3 storage) |
-| CodeBuild | 1 build project, `BUILD_GENERAL1_SMALL` | $0.005/build-minute (Linux) | ~$3 (100 min/month) |
-| VPC | 1 VPC, 2 public subnets + 2 private subnets, 2 AZs | No charge for VPC/subnets | $0 |
-| | | **Estimated Baseline Total** | **~$195–305/month** |
+| Service | Starting Configuration | Network / CIDR | Unit Price (Mumbai, On-Demand) | Est. Monthly Cost |
+|---------|----------------------|----------------|-------------------------------|-------------------|
+| VPC | 1 VPC, 2 public subnets + 2 private subnets, 2 AZs | `10.0.0.0/16` (65,536 IPs) | No charge for VPC/subnets | $0 |
+| Public Subnet — AZ1 | ALB, NAT Gateway | `10.0.1.0/24` (256 IPs) | — | — |
+| Public Subnet — AZ2 | ALB (multi-AZ) | `10.0.2.0/24` (256 IPs) | — | — |
+| Private Subnet — AZ1 | ECS/EC2, Aurora, Redis | `10.0.10.0/24` (256 IPs) | — | — |
+| Private Subnet — AZ2 | ECS/EC2, Aurora (multi-AZ) | `10.0.20.0/24` (256 IPs) | — | — |
+| Elastic IP (EIP) | 1 EIP for NAT Gateway | Assigned from AWS public pool | Free while associated to NAT GW; $0.005/hour if idle | ~$0 (associated) |
+| Route 53 | 1 hosted zone, wildcard DNS record | Public DNS (no VPC CIDR) | $0.50/month per hosted zone + $0.40 per million queries | ~$1 |
+| CloudFront | Disabled initially (enable when needed) | Edge locations (no VPC CIDR) | $0.013/GB data transfer out (India) + $0.0095 per 10K requests | $0 (if enabled: ~$15–30 for 1 TB/month) |
+| AWS WAF | 1 Web ACL + 3 managed rule groups (Core, SQLi, rate limiting) | Attached to ALB | $5.00/month per Web ACL + $1.00/month per rule group + $0.60 per million requests | ~$10 |
+| ACM | 1 wildcard SSL certificate (`*.app.example.com`) | N/A | Free (public certs used with ALB/CloudFront) | $0 |
+| ALB | 1 Application Load Balancer, 2 AZs | Public subnets (`10.0.1.0/24`, `10.0.2.0/24`) | $0.0252/hour + $0.008 per LCU-hour | ~$20 |
+| NAT Gateway | 1 NAT Gateway (single AZ) | Public subnet AZ1 (`10.0.1.0/24`) | $0.045/hour + $0.045 per GB processed | ~$35 + data charges |
+| ECS Cluster | 1 cluster, EC2 launch type | Private subnets | No additional charge (ECS orchestration is free) | $0 |
+| EC2 Instances (ASG) | 2x `t3.medium` (min), max 4, across 2 AZs | Private subnets (`10.0.10.0/24`, `10.0.20.0/24`) | $0.0448/hour per instance | ~$65 (2 instances 24/7) |
+| ECS Tasks | 2 tasks (1 per instance), 1 vCPU / 2 GB RAM per task | `awsvpc` mode — ENI per task in private subnets | Included in EC2 cost | $0 |
+| Aurora Serverless v2 | 1 cluster, min 0.5 ACU / max 8 ACU, PostgreSQL 15, Multi-AZ | Private subnets (DB subnet group: `10.0.10.0/24`, `10.0.20.0/24`) | $0.12/ACU-hour + $0.115/GB-month storage | ~$50–90 (0.5–1 ACU avg + 20 GB storage) |
+| ElastiCache Redis | Disabled initially (enable when needed) | Private subnets (cache subnet group) | cache.t3.micro: ~$0.018/hour | $0 (if enabled: ~$13 for 1 node) |
+| S3 | 1 bucket, versioning enabled, Standard storage class | N/A (accessed via Gateway Endpoint) | $0.025/GB-month storage + $0.005 per 1K PUT requests | ~$3 (100 GB) |
+| ECR | 1 private repository, image scanning enabled | N/A (accessed via NAT GW or VPC Endpoint) | $0.10/GB-month storage | ~$1 |
+| SES | Sandbox mode initially, production access on go-live | N/A (accessed via NAT GW) | $0.10 per 1,000 emails | ~$1 |
+| SQS | 1 standard queue | N/A (accessed via NAT GW or VPC Endpoint) | $0.40 per million requests (first 1M free) | ~$0 |
+| SNS | 1 topic (CloudWatch alerts) | N/A (accessed via NAT GW or VPC Endpoint) | $0.50 per million publishes + delivery charges | ~$0 |
+| Secrets Manager | 1–2 secrets (DB credentials, API keys) | N/A (accessed via NAT GW or VPC Endpoint) | $0.40/secret/month + $0.05 per 10K API calls | ~$1 |
+| CloudWatch | Basic monitoring, log groups per ECS service, 1–2 alarms | N/A (accessed via NAT GW or VPC Endpoint) | $0.10/alarm + $0.30/custom metric + $0.67/GB log ingestion | ~$5–10 |
+| CloudTrail | Disabled initially (enable for compliance) | N/A | First trail free (mgmt events) + $2.00 per 100K data events | $0 (if enabled: ~$2–5 for mgmt events + S3 storage) |
+| CodeBuild | 1 build project, `BUILD_GENERAL1_SMALL` | AWS-managed VPC (or configured to run in project VPC) | $0.005/build-minute (Linux) | ~$3 (100 min/month) |
+| | | | | |
+| **Backups (7-day retention)** | | | | |
+| Aurora Backups | Continuous automated backups, 7-day retention | N/A | Free up to total DB cluster storage size; excess at $0.021/GB-month | ~$0 (free while backup ≤ DB size, ~20 GB) |
+| EBS Snapshots (EC2) | Daily snapshots of EC2 EBS volumes, 7-day retention | N/A | $0.05/GB-month (incremental snapshots) | ~$3–5 (2 instances × ~30 GB gp3) |
+| S3 Versioning | Noncurrent versions retained for 7 days via lifecycle rule | N/A | Same as S3 Standard: $0.025/GB-month | ~$1 (minimal overhead with 7-day expiry) |
+| ECR Image Retention | Lifecycle policy: keep last 7 image tags | N/A | $0.10/GB-month | ~$0.50 (7 images × ~500 MB) |
+| | | | | |
+| | | | **Estimated Baseline Total (incl. backups)** | **~$200–315/month** |
 
 > **Notes:**
 > - These are baseline starting values for a government project where user volumes are not yet confirmed. All auto-scaling components (ECS Capacity Provider, ASG, Aurora ACUs) will scale up automatically as demand increases.
 > - The range depends primarily on Aurora ACU usage and NAT Gateway data processing.
 > - EC2 costs can be reduced ~40–60% with 1-year Reserved Instances or Savings Plans.
 > - SQS and SNS are effectively free at low volumes (1M free requests/month each).
+> - The VPC CIDR `10.0.0.0/16` provides room for future expansion (additional subnets for isolated DB tiers, VPN, etc.). Subnet CIDRs can be adjusted based on expected scale.
+> - EIP is free while associated with a running NAT Gateway. An unassociated EIP costs $0.005/hour (~$3.60/month).
 > - Prices sourced from [AWS Pricing pages](https://aws.amazon.com/pricing/) and [aws-pricing.com](https://aws-pricing.com/ap-south-1.html) for ap-south-1. Verify before committing.
 
 ---
@@ -373,7 +389,7 @@ This is one of the key operational advantages of ECS over EKS — there is no co
 
 ### Database Backups
 
-- Aurora Serverless v2 provides continuous automated backups with point-in-time recovery (PITR) for up to 35 days.
+- Aurora Serverless v2 provides continuous automated backups with point-in-time recovery (PITR) with a 7-day retention period.
 - Manual snapshots are taken before major releases and retained per the team's retention policy.
 - For cross-region disaster recovery, Aurora Global Database can be enabled to replicate to a secondary region with typical replication lag under 1 second. This is optional and should be enabled when business continuity requirements demand it.
 
