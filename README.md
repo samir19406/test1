@@ -22,28 +22,36 @@ subgraph AWS_Cloud[AWS Cloud]
 
     subgraph VPC[VPC]
 
-        ALB[ALB - Distributes traffic]
+        subgraph Public_Subnets[Public Subnets]
+            ALB[ALB - Distributes traffic]
+            NAT[NAT Gateway]
+        end
 
-        subgraph ECS_Cluster[ECS Cluster EC2]
-            CP[Capacity Provider]
-            subgraph ASG[Auto Scaling Group]
-                EC2_1[EC2 Instance 1]
-                EC2_2[EC2 Instance 2]
-                EC2_3[EC2 Instance 3]
-                EC2_N[EC2 Instance N...]
+        subgraph Private_Subnets[Private Subnets]
+
+            subgraph ECS_Cluster[ECS Cluster EC2]
+                CP[Capacity Provider]
+                TG[Target Group]
+                subgraph ASG[Auto Scaling Group]
+                    EC2_1[EC2 Instance 1]
+                    EC2_2[EC2 Instance 2]
+                    EC2_3[EC2 Instance 3]
+                    EC2_N[EC2 Instance N...]
+                end
             end
-        end
 
-        subgraph Aurora_Cluster[Aurora Serverless v2 PostgreSQL]
-            MasterDB[(Master DB)]
-            TemplateDB[(Template DB)]
-            StateDB1[(State DB 1)]
-            StateDB2[(State DB 2)]
-            StateDBN[(State DB N...)]
-        end
+            subgraph Aurora_Cluster[Aurora Serverless v2 PostgreSQL]
+                MasterDB[(Master DB)]
+                TemplateDB[(Template DB)]
+                StateDB1[(State DB 1)]
+                StateDB2[(State DB 2)]
+                StateDBN[(State DB N...)]
+            end
 
-        Redis[(ElastiCache Redis - Optional)]
-        ECR[(ECR - Container registry)]
+            Redis[(ElastiCache Redis - Optional)]
+            ECR[(ECR - Container registry)]
+
+        end
 
     end
 
@@ -69,8 +77,10 @@ CloudFront -. "3 Forwards" .-> WAF
 Route53 -- "2 Resolves" --> WAF
 WAF -- "3 Filters" --> ALB
 ACM -. Certs .-> ALB
-ALB -- "4 Routes" --> ASG
+ALB -- "4 Routes" --> TG
+TG -- "Routes to tasks" --> ASG
 CP -- Auto scaling --> ASG
+ASG -- Outbound via --> NAT
 
 %% App to Data Flow
 ASG -- "5 Reads/Writes" --> Aurora_Cluster
@@ -101,6 +111,7 @@ style Redis stroke-dasharray: 5 5
 style EC2_N stroke-dasharray: 5 5
 style TemplateDB stroke-dasharray: 5 5
 style StateDBN stroke-dasharray: 5 5
+style NAT fill:#f9f,stroke:#333
 ```
 
 ---
@@ -117,7 +128,7 @@ If CloudFront is enabled, static assets are served from edge locations, reducing
 AWS WAF inspects all incoming HTTP/HTTPS traffic. It filters out malicious requests (SQL injection, XSS, bot traffic, rate limiting) before they reach the application.
 
 ### Step 4 — Load Balancing
-The Application Load Balancer (ALB) terminates SSL (via ACM certificates) and distributes traffic across healthy EC2 instances in the Auto Scaling Group. ALB supports path-based and host-based routing for multi-tenant scenarios.
+The Application Load Balancer (ALB) terminates SSL (via ACM certificates) and distributes traffic to ECS tasks registered in a Target Group. The ALB does not route to EC2 instances directly — it routes to the ECS tasks (containers) running on those instances. ALB supports path-based and host-based routing for multi-tenant scenarios (see Section 6 for tenant routing details).
 
 ### Step 5 — Application Processing (ECS on EC2)
 Requests land on ECS tasks running on EC2 instances managed by an Auto Scaling Group. The ECS Capacity Provider handles scaling EC2 instances up/down based on task demand.
@@ -152,6 +163,15 @@ CloudWatch collects metrics, logs, and alarms. SNS delivers alerts (email, Slack
 | 3 | CodeBuild builds the Docker image and pushes it to ECR |
 | 4 | CodeBuild updates the ECS service with the new task definition |
 | 5 | ECS pulls the new image from ECR and performs a rolling deployment |
+
+### Environment Promotion
+
+The pipeline supports three environments: **dev**, **staging**, and **production**.
+
+- Pushes to `develop` automatically deploy to the **dev** environment.
+- Merges to `main` deploy to **staging** automatically, with a manual approval gate before promoting to **production**.
+- Each environment runs in its own ECS service (and optionally its own cluster) with separate Aurora databases and configuration.
+- Environment-specific variables (DB endpoints, feature flags, secrets) are managed via SSM Parameter Store or Secrets Manager, scoped per environment.
 
 ---
 
@@ -196,14 +216,26 @@ Fargate is simpler (serverless containers), but EC2 launch type was chosen becau
 
 ---
 
-## 6. Multi-Tenant Database Strategy
+## 6. Multi-Tenant Strategy
+
+### Tenant Routing
+
+Tenant identification is handled at the application layer using subdomain-based routing:
+
+- Each tenant is assigned a subdomain (e.g., `tenant1.app.example.com`, `tenant2.app.example.com`).
+- Route 53 uses a wildcard DNS record (`*.app.example.com`) pointing to the ALB.
+- The ALB forwards all requests to the ECS tasks. The application extracts the tenant identifier from the `Host` header and routes the request to the correct State DB.
+- This approach avoids ALB listener rule sprawl and keeps tenant onboarding simple — no infrastructure changes needed per tenant.
+
+### Database Strategy
 
 The Aurora cluster uses a template-cloning pattern:
 
 - A **Template DB** holds the base schema and seed data.
-- When a new tenant is onboarded, the template is cloned into a new **State DB** (StateDB1, StateDB2, etc.).
+- When a new tenant is onboarded, the template is cloned into a new **State DB** (StateDB1, StateDB2, etc.) using `CREATE DATABASE ... TEMPLATE` (PostgreSQL template databases). This is a server-level copy operation that duplicates the schema and seed data in seconds for small-to-medium templates. For larger templates, `pg_dump`/`pg_restore` can be used as an alternative.
 - This gives each tenant full data isolation while sharing the same Aurora Serverless v2 cluster for cost efficiency.
 - Aurora Serverless v2 scales compute automatically, so tenant databases don't need individual capacity planning.
+- A tenant metadata table in the Master DB maps tenant identifiers (subdomains) to their corresponding State DB connection details.
 
 ---
 
@@ -222,7 +254,8 @@ The Aurora cluster uses a template-cloning pattern:
 
 - All traffic is encrypted in transit (ACM + ALB SSL termination).
 - WAF protects against OWASP Top 10 threats.
-- Application runs inside a VPC with private subnets (EC2 instances are not publicly accessible).
+- The VPC is segmented into public and private subnets. The ALB and NAT Gateway sit in public subnets. All EC2 instances, ECS tasks, Aurora databases, and ElastiCache reside in private subnets with no direct internet access.
+- Outbound internet access from private subnets (for pulling images, sending emails, etc.) is routed through a NAT Gateway.
 - IAM roles scoped per ECS task (least privilege).
 - Secrets Manager avoids hardcoded credentials.
 - CloudTrail provides an audit trail of all API activity.
@@ -233,7 +266,7 @@ The Aurora cluster uses a template-cloning pattern:
 
 - EC2 Reserved Instances or Savings Plans for baseline capacity.
 - Auto Scaling Group scales out only when ECS needs more capacity.
-- Aurora Serverless v2 scales to zero ACUs during idle periods.
+- Aurora Serverless v2 scales down to a minimum of 0.5 ACUs during idle periods, keeping costs low without full cluster pauses.
 - S3 lifecycle policies move old data to cheaper storage tiers.
 - CloudFront reduces origin load and data transfer costs.
 
@@ -289,3 +322,36 @@ The following services require no patching from our side — AWS manages them en
 | Effort estimate | High, error-prone | Low, automated | Medium-high, multi-step process |
 
 This is one of the key operational advantages of ECS over EKS — there is no control plane to patch, no add-ons to version-manage, and no CRD compatibility matrix to worry about.
+
+---
+
+## 11. Disaster Recovery & Backup Strategy
+
+### Recovery Objectives
+
+| Metric | Target |
+|--------|--------|
+| RPO (Recovery Point Objective) | 5 minutes (Aurora continuous backups) |
+| RTO (Recovery Time Objective) | < 30 minutes (automated failover + ECS redeployment) |
+
+### Database Backups
+
+- Aurora Serverless v2 provides continuous automated backups with point-in-time recovery (PITR) for up to 35 days.
+- Manual snapshots are taken before major releases and retained per the team's retention policy.
+- For cross-region disaster recovery, Aurora Global Database can be enabled to replicate to a secondary region with typical replication lag under 1 second. This is optional and should be enabled when business continuity requirements demand it.
+
+### Application Recovery
+
+- ECS task definitions are versioned. Rollback to a previous version is a single API call.
+- EC2 instances are stateless — the ASG can replace failed instances automatically, and ECS reschedules tasks onto healthy hosts.
+- Docker images are stored in ECR with immutable tags, ensuring any previous version can be redeployed.
+
+### File Storage
+
+- S3 provides 99.999999999% (11 nines) durability by default.
+- S3 versioning is enabled to protect against accidental deletions or overwrites.
+- For cross-region resilience, S3 Cross-Region Replication (CRR) can be enabled on critical buckets.
+
+### Infrastructure as Code
+
+- All infrastructure is defined in code (CloudFormation / Terraform) and stored in version control, enabling full environment recreation from scratch if needed.
