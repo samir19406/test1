@@ -111,7 +111,6 @@ style Redis stroke-dasharray: 5 5
 style EC2_N stroke-dasharray: 5 5
 style TemplateDB stroke-dasharray: 5 5
 style StateDBN stroke-dasharray: 5 5
-style NAT fill:#f9f,stroke:#333
 ```
 
 ---
@@ -119,7 +118,7 @@ style NAT fill:#f9f,stroke:#333
 ## 3. Request Flow (End to End)
 
 ### Step 1 — DNS Resolution
-Users hit the application domain. Route 53 resolves the DNS and routes traffic into AWS.
+Users hit the application domain (e.g., `tenant1.app.example.com`). Route 53 resolves the wildcard DNS record (`*.app.example.com`) and routes traffic into AWS. The tenant identifier is embedded in the subdomain.
 
 ### Step 2 — Edge Layer (Optional CDN)
 If CloudFront is enabled, static assets are served from edge locations, reducing latency. CloudFront forwards dynamic requests downstream. If CloudFront is not used, Route 53 resolves directly to WAF.
@@ -131,23 +130,23 @@ AWS WAF inspects all incoming HTTP/HTTPS traffic. It filters out malicious reque
 The Application Load Balancer (ALB) terminates SSL (via ACM certificates) and distributes traffic to ECS tasks registered in a Target Group. The ALB does not route to EC2 instances directly — it routes to the ECS tasks (containers) running on those instances. ALB supports path-based and host-based routing for multi-tenant scenarios (see Section 6 for tenant routing details).
 
 ### Step 5 — Application Processing (ECS on EC2)
-Requests land on ECS tasks running on EC2 instances managed by an Auto Scaling Group. The ECS Capacity Provider handles scaling EC2 instances up/down based on task demand.
+Requests land on ECS tasks running on EC2 instances in private subnets, managed by an Auto Scaling Group. The ECS Capacity Provider handles scaling EC2 instances up/down based on task demand. The application extracts the tenant identifier from the `Host` header and resolves the corresponding State DB connection from the tenant metadata table in the Master DB (see Section 6).
 
 ### Step 6 — Data Layer
-- The application reads/writes to Aurora Serverless v2 (PostgreSQL). A Master DB handles core application data. A Template DB is cloned per tenant to create isolated State DBs (StateDB1, StateDB2, ... StateDBN), enabling multi-tenant data isolation.
-- ElastiCache Redis (optional) provides caching for session data, frequently accessed queries, or rate limiting.
+- The application reads/writes to Aurora Serverless v2 (PostgreSQL), running in private subnets alongside the ECS tasks. A Master DB handles core application data and tenant routing metadata. Per-tenant State DBs (StateDB1, StateDB2, ... StateDBN) are cloned from a Template DB using PostgreSQL's `CREATE DATABASE ... TEMPLATE`, providing full data isolation per tenant (see Section 6 for details).
+- ElastiCache Redis (optional, also in private subnets) provides caching for session data, frequently accessed queries, or rate limiting.
 
 ### Step 7 — File Storage
-S3 handles all file/object storage — uploads, exports, static assets, backups.
+S3 handles all file/object storage — uploads, exports, static assets, backups. ECS tasks in private subnets access S3 via a VPC Gateway Endpoint (no NAT Gateway cost for S3 traffic) or through the NAT Gateway.
 
 ### Step 8 — Email
-SES sends transactional emails (notifications, password resets, reports).
+SES sends transactional emails (notifications, password resets, reports). Outbound traffic from ECS tasks to SES is routed through the NAT Gateway.
 
 ### Step 9 — Async Processing
-SQS queues background tasks (report generation, bulk operations, webhooks) for decoupled, reliable processing.
+SQS queues background tasks (report generation, bulk operations, webhooks) for decoupled, reliable processing. ECS tasks access SQS via VPC Interface Endpoints or through the NAT Gateway.
 
 ### Step 10 — Secrets
-Secrets Manager (optional) stores and rotates database credentials, API keys, and other sensitive config. ECS tasks fetch secrets at runtime.
+Secrets Manager (optional) stores and rotates database credentials, API keys, and other sensitive config. ECS tasks fetch secrets at runtime via the AWS API (routed through VPC endpoints or NAT Gateway).
 
 ### Step 11 — Monitoring & Alerting
 CloudWatch collects metrics, logs, and alarms. SNS delivers alerts (email, Slack, PagerDuty) when thresholds are breached. CloudTrail (optional) provides audit logging for compliance.
