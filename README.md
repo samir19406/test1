@@ -122,7 +122,7 @@ style StateDBN stroke-dasharray: 5 5
 | Service | Starting Configuration | Unit Price (Mumbai, On-Demand) | Est. Monthly Cost |
 |---------|----------------------|-------------------------------|-------------------|
 | Route 53 | 1 hosted zone, wildcard DNS record | $0.50/month per hosted zone + $0.40 per million queries | ~$1 |
-| CloudFront | Disabled initially (enable when needed) | — | $0 |
+| CloudFront | Disabled initially (enable when needed) | $0.013/GB data transfer out (India) + $0.0095 per 10K requests | $0 (if enabled: ~$15–30 for 1 TB/month) |
 | AWS WAF | 1 Web ACL + 3 managed rule groups (Core, SQLi, rate limiting) | $5.00/month per Web ACL + $1.00/month per rule group + $0.60 per million requests | ~$10 |
 | ACM | 1 wildcard SSL certificate (`*.app.example.com`) | Free (public certs used with ALB/CloudFront) | $0 |
 | ALB | 1 Application Load Balancer, 2 AZs | $0.0252/hour + $0.008 per LCU-hour | ~$20 |
@@ -131,7 +131,7 @@ style StateDBN stroke-dasharray: 5 5
 | ECS Tasks | 2 tasks (1 per instance), 1 vCPU / 2 GB RAM per task | Included in EC2 cost | $0 |
 | Aurora Serverless v2 | 1 cluster, min 0.5 ACU / max 8 ACU, PostgreSQL 15, Multi-AZ | $0.12/ACU-hour + $0.115/GB-month storage | ~$50–90 (0.5–1 ACU avg + 20 GB storage) |
 | NAT Gateway | 1 NAT Gateway (single AZ) | $0.045/hour + $0.045 per GB processed | ~$35 + data charges |
-| ElastiCache Redis | Disabled initially (enable when needed) | cache.t3.micro: ~$0.018/hour | $0 (disabled) |
+| ElastiCache Redis | Disabled initially (enable when needed) | cache.t3.micro: ~$0.018/hour | $0 (if enabled: ~$13 for 1 node) |
 | S3 | 1 bucket, versioning enabled, Standard storage class | $0.025/GB-month storage + $0.005 per 1K PUT requests | ~$3 (100 GB) |
 | ECR | 1 private repository, image scanning enabled | $0.10/GB-month storage | ~$1 |
 | SES | Sandbox mode initially, production access on go-live | $0.10 per 1,000 emails | ~$1 |
@@ -139,7 +139,7 @@ style StateDBN stroke-dasharray: 5 5
 | SNS | 1 topic (CloudWatch alerts) | $0.50 per million publishes + delivery charges | ~$0 |
 | Secrets Manager | 1–2 secrets (DB credentials, API keys) | $0.40/secret/month + $0.05 per 10K API calls | ~$1 |
 | CloudWatch | Basic monitoring, log groups per ECS service, 1–2 alarms | $0.10/alarm + $0.30/custom metric + $0.67/GB log ingestion | ~$5–10 |
-| CloudTrail | Disabled initially (enable for compliance) | — | $0 |
+| CloudTrail | Disabled initially (enable for compliance) | First trail free (mgmt events) + $2.00 per 100K data events | $0 (if enabled: ~$2–5 for mgmt events + S3 storage) |
 | CodeBuild | 1 build project, `BUILD_GENERAL1_SMALL` | $0.005/build-minute (Linux) | ~$3 (100 min/month) |
 | VPC | 1 VPC, 2 public subnets + 2 private subnets, 2 AZs | No charge for VPC/subnets | $0 |
 | | | **Estimated Baseline Total** | **~$195–305/month** |
