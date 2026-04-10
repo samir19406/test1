@@ -38,7 +38,7 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment"]
                 MasterDB["(Master DB)
                 ———
                 Min 0.5 ACU / Max 1 ACU
-                PostgreSQL 15+
+                PostgreSQL 18.3
                 Single AZ (no replica)
                 20GB storage"]
             end
@@ -96,11 +96,11 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | Service | Config | Details |
 |---------|--------|---------|
 | VPC | 10.0.0.0/16 | 2 public subnets + 2 private subnets across 2 AZs |
-| NAT Gateway | 1x single AZ | Single AZ to save cost |
+| NAT Gateway | 1x single AZ | Single AZ |
 | ALB | 1x Application LB | HTTP 80 listener, test via ALB DNS name directly |
-| EC2 (ECS) | t3.small | 2 vCPU, 2GB RAM, 20GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI |
+| EC2 (ECS) | t3.small | 2 vCPU, 2GB RAM, 20GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI, ASG min:1 max:1 |
 | ECS Task | 1 task | CPU: 512 (0.5 vCPU), Memory: 1024 MB |
-| Aurora Serverless v2 | 0.5 – 1 ACU | PostgreSQL 15+, single AZ, no read replica, ~20GB storage |
+| Aurora Serverless v2 | 0.5 – 1 ACU | PostgreSQL 18.3, single AZ, no read replica, ~20GB storage |
 | ECR | 1 repository | Lifecycle policy: retain last 5 images |
 | S3 | 1 bucket | Standard storage class, no versioning |
 | SES | Sandbox mode | Only verified sender/receiver emails, no production approval needed |
@@ -119,10 +119,10 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | 2 | NAT Gateway | 1x single AZ |
 | 3 | ALB | HTTP 80 listener, target group with health check on /health |
 | 4 | Security Groups | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
-| 5 | ECS Cluster (EC2) | 1x t3.small, 20GB gp3, Amazon Linux 2023 ECS AMI |
+| 5 | ECS Cluster (EC2) | 1x t3.small, 20GB gp3, Amazon Linux 2023 ECS AMI, ASG min:1 max:1 |
 | 6 | ECS Task Definition | CPU: 512, Memory: 1024 MB, container port as per app |
 | 7 | ECS Service | 1 desired task, linked to ALB target group |
-| 8 | Aurora Serverless v2 | PostgreSQL 15+, 0.5–1 ACU, single AZ, no replica |
+| 8 | Aurora Serverless v2 | PostgreSQL 18.3, 0.5–1 ACU, single AZ, no replica |
 | 9 | ECR | 1 repository, lifecycle: keep last 5 images |
 | 10 | S3 | 1 bucket, standard tier, no versioning |
 | 11 | SES | Sandbox mode, verify sender/receiver emails |
