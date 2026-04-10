@@ -5,41 +5,72 @@ User[Users / QA Testers]
 
 subgraph AWS_Cloud[AWS Cloud - Minimum for Testing]
 
-    Route53[Route 53 - DNS]
-    ACM[ACM - SSL/TLS cert]
+    Route53["Route 53 - DNS
+    ———
+    1 Hosted Zone"]
+    ACM["ACM - SSL/TLS cert
+    ———
+    1 Certificate"]
 
-    subgraph VPC[VPC]
+    subgraph VPC["VPC (10.0.0.0/16)"]
 
-        subgraph Public_Subnets[Public Subnets]
-            ALB[ALB - Load Balancer]
-            NAT[NAT Gateway]
+        subgraph Public_Subnets["Public Subnets (2 AZs min)"]
+            ALB["ALB - Load Balancer
+            ———
+            Listener: 443 HTTPS"]
+            NAT["NAT Gateway
+            ———
+            1 NAT (single AZ)"]
         end
 
-        subgraph Private_Subnets[Private Subnets]
+        subgraph Private_Subnets["Private Subnets (2 AZs min)"]
 
             subgraph ECS_Cluster[ECS Cluster EC2]
-                TG[Target Group]
+                TG["Target Group
+                ———
+                Health check: /health"]
                 subgraph ASG[Auto Scaling Group]
-                    EC2_1[EC2 Instance - 1 minimum]
+                    EC2_1["EC2 Instance x1
+                    ———
+                    t3.medium (2 vCPU / 4GB)
+                    30GB gp3 EBS
+                    Amazon Linux 2023 ECS AMI"]
                 end
             end
 
-            subgraph Aurora_Cluster[Aurora Serverless v2 PostgreSQL]
-                MasterDB[(Master DB)]
+            subgraph Aurora_Cluster["Aurora Serverless v2 PostgreSQL"]
+                MasterDB["(Master DB)
+                ———
+                Min 0.5 ACU / Max 2 ACU
+                PostgreSQL 15+
+                Single AZ (no replica)
+                20GB storage"]
             end
 
-            ECR[(ECR - Container registry)]
+            ECR["ECR
+            ———
+            1 Repository
+            Lifecycle: keep last 5 images"]
 
         end
 
     end
 
-    S3[(S3 - File storage)]
-    SES[SES - Email service]
-    SQS[SQS - Message queue]
+    S3["S3 - File storage
+    ———
+    1 Bucket
+    Standard tier"]
+    SES["SES - Email
+    ———
+    Sandbox mode (verified emails only)"]
+    SQS["SQS - Queue
+    ———
+    1 Standard Queue"]
 
     subgraph CICD[CI/CD]
-        GitHub[GitHub Actions]
+        GitHub["GitHub Actions
+        ———
+        1 Workflow (build + deploy)"]
     end
 
 end
@@ -62,5 +93,6 @@ ASG -- "7 Queues tasks" --> SQS
 GitHub -- "1 Pushes image" --> ECR
 GitHub -- "2 Updates service" --> ECS_Cluster
 ECS_Cluster -- "3 Pulls image" --> ECR
+
 
 ```
