@@ -5,19 +5,15 @@ User[Users / QA Testers]
 
 subgraph AWS_Cloud[AWS Cloud - Minimum for Testing]
 
-    Route53["Route 53 - DNS
-    ———
-    1 Hosted Zone"]
-    ACM["ACM - SSL/TLS cert
-    ———
-    1 Certificate"]
+
 
     subgraph VPC["VPC (10.0.0.0/16)"]
 
         subgraph Public_Subnets["Public Subnets (2 AZs min)"]
             ALB["ALB - Load Balancer
             ———
-            Listener: 443 HTTPS"]
+            Listener: 80 HTTP
+            Test via ALB DNS name"]
             NAT["NAT Gateway
             ———
             1 NAT (single AZ)"]
@@ -76,10 +72,8 @@ subgraph AWS_Cloud[AWS Cloud - Minimum for Testing]
 end
 
 %% Request Flow
-User -- "1 DNS lookup" --> Route53
-Route53 -- "2 Resolves" --> ALB
-ACM -. Certs .-> ALB
-ALB -- "3 Routes" --> TG
+User -- "1 HTTP request" --> ALB
+ALB -- "2 Routes" --> TG
 TG -- "Routes to task" --> ASG
 ASG -- Outbound via --> NAT
 
@@ -103,16 +97,16 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 |---------|--------|---------|
 | VPC | 10.0.0.0/16 | 2 public subnets + 2 private subnets across 2 AZs |
 | NAT Gateway | 1x single AZ | Saves cost vs HA (1 per AZ) |
-| ALB | 1x Application LB | HTTPS 443 listener, ACM cert attached |
+| ALB | 1x Application LB | HTTP 80 listener, test via ALB DNS name directly |
 | EC2 (ECS) | t3.medium | 2 vCPU, 4GB RAM, 30GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI |
 | ECS Task | 1 task | CPU: 1024 (1 vCPU), Memory: 2048 MB |
 | Aurora Serverless v2 | 0.5 – 2 ACU | PostgreSQL 15+, single AZ, no read replica, ~20GB storage |
 | ECR | 1 repository | Lifecycle policy: retain last 5 images |
-| S3 | 1 bucket | Standard storage class, versioning optional |
+| S3 | 1 bucket | Standard storage class, no versioning |
 | SES | Sandbox mode | Only verified sender/receiver emails, no production approval needed |
 | SQS | 1 standard queue | Default settings, 4-day retention |
-| Route 53 | 1 hosted zone | 1 A record (alias to ALB) |
-| ACM | 1 certificate | DNS validated, auto-renew |
+| Route 53 | Not required | Test directly via ALB DNS name |
+| ACM | Not required | Use ALB DNS (HTTP) for testing |
 | Security Groups | 3 minimum | ALB (inbound 443), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
 | IAM | ECS Task Role + Execution Role | S3, SES, SQS, ECR, CloudWatch Logs permissions |
 | GitHub Actions | 1 workflow | Build image → push to ECR → update ECS service |
