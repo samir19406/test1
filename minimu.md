@@ -93,6 +93,26 @@ ASG -- "7 Queues tasks" --> SQS
 GitHub -- "1 Pushes image" --> ECR
 GitHub -- "2 Updates service" --> ECS_Cluster
 ECS_Cluster -- "3 Pulls image" --> ECR
-
-
 ```
+
+---
+
+## Minimum Testing Configuration
+
+| Service | Config | Details |
+|---------|--------|---------|
+| VPC | 10.0.0.0/16 | 2 public subnets + 2 private subnets across 2 AZs |
+| NAT Gateway | 1x single AZ | Saves cost vs HA (1 per AZ) |
+| ALB | 1x Application LB | HTTPS 443 listener, ACM cert attached |
+| EC2 (ECS) | t3.medium | 2 vCPU, 4GB RAM, 30GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI |
+| ECS Task | 1 task | CPU: 1024 (1 vCPU), Memory: 2048 MB |
+| Aurora Serverless v2 | 0.5 – 2 ACU | PostgreSQL 15+, single AZ, no read replica, ~20GB storage |
+| ECR | 1 repository | Lifecycle policy: retain last 5 images |
+| S3 | 1 bucket | Standard storage class, versioning optional |
+| SES | Sandbox mode | Only verified sender/receiver emails, no production approval needed |
+| SQS | 1 standard queue | Default settings, 4-day retention |
+| Route 53 | 1 hosted zone | 1 A record (alias to ALB) |
+| ACM | 1 certificate | DNS validated, auto-renew |
+| Security Groups | 3 minimum | ALB (inbound 443), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
+| IAM | ECS Task Role + Execution Role | S3, SES, SQS, ECR, CloudWatch Logs permissions |
+| GitHub Actions | 1 workflow | Build image → push to ECR → update ECS service |
