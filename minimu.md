@@ -1,6 +1,3 @@
----
-title: Minimum Requirements to Start Testing (NPROD)
----
 flowchart TB
 
     subgraph MINIMUM["🟢 MINIMUM TO START TESTING"]
