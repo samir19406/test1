@@ -105,8 +105,6 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | S3 | 1 bucket | Standard storage class, no versioning |
 | SES | Sandbox mode | Only verified sender/receiver emails, no production approval needed |
 | SQS | 1 standard queue | Default settings, 4-day retention |
-| Route 53 | Not required | Test directly via ALB DNS name |
-| ACM | Not required | Use ALB DNS (HTTP) for testing |
-| Security Groups | 3 minimum | ALB (inbound 443), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
+| Security Groups | 3 minimum | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
 | IAM | ECS Task Role + Execution Role | S3, SES, SQS, ECR, CloudWatch Logs permissions |
 | GitHub Actions | 1 workflow | Build image → push to ECR → update ECS service |
