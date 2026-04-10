@@ -13,6 +13,7 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment"]
             ALB["ALB - Load Balancer
             ———
             Listener: 80 HTTP
+            Path-based routing to N services
             Test via ALB DNS name"]
             NAT["NAT Gateway
             ———
@@ -22,15 +23,21 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment"]
         subgraph Private_Subnets["Private Subnets (2 AZs min)"]
 
             subgraph ECS_Cluster[ECS Cluster EC2]
-                TG["Target Group
+                TG1["Target Group xN
                 ———
+                1 per microservice
                 Health check: /health"]
+                SVC["ECS Services xN
+                ———
+                1 per microservice
+                1 task each"]
                 subgraph ASG[Auto Scaling Group]
-                    EC2_1["EC2 Instance x1
+                    EC2_1["EC2 Instances
                     ———
-                    t3.small (2 vCPU / 2GB)
-                    20GB gp3 EBS
-                    Amazon Linux 2023 ECS AMI"]
+                    t3.xlarge (4 vCPU / 16GB)
+                    40GB gp3 EBS
+                    Amazon Linux 2023 ECS AMI
+                    ASG min:1 max: based on N"]
                 end
             end
 
@@ -45,7 +52,7 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment"]
 
             ECR["ECR
             ———
-            1 Repository
+            N Repositories (1 per microservice)
             Lifecycle: keep last 5 images"]
 
         end
@@ -66,15 +73,16 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment"]
     subgraph CICD[CI/CD]
         GitHub["GitHub Actions
         ———
-        1 Workflow (build + deploy)"]
+        N Workflows (1 per microservice)"]
     end
 
 end
 
 %% Request Flow
 User -- "1 HTTP request" --> ALB
-ALB -- "2 Routes" --> TG
-TG -- "Routes to task" --> ASG
+ALB -- "2 Path-based routing" --> TG1
+TG1 -- "Routes to services" --> SVC
+SVC -- "Runs on" --> ASG
 ASG -- Outbound via --> NAT
 
 %% App to Data Flow
@@ -93,21 +101,24 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 ## DEV Environment — Minimum Configuration
 
+> Naming Convention: All resources should follow `pci-<resource>-dev` pattern (e.g. pci-cluster-dev, pci-alb-dev, pci-db-dev)
+
 | Service | Config | Details |
 |---------|--------|---------|
 | VPC | 10.0.0.0/16 | 2 public subnets + 2 private subnets across 2 AZs |
 | NAT Gateway | 1x single AZ | Single AZ |
-| ALB | 1x Application LB | HTTP 80 listener, test via ALB DNS name directly |
-| EC2 (ECS) | t3.small | 2 vCPU, 2GB RAM, 20GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI, ASG min:1 max:1 |
-| ECS Task | 1 task | CPU: 512 (0.5 vCPU), Memory: 1024 MB |
+| ALB | 1x Application LB | HTTP 80 listener, path-based routing to N services, test via ALB DNS name |
+| EC2 (ECS) | t3.xlarge | 4 vCPU, 16GB RAM, 40GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI, ASG min:1 max:3 |
+| ECS Services | N services | 1 per microservice, 1 task each |
+| ECS Task | N task definitions | CPU: 256 (0.25 vCPU), Memory: 512 MB per service |
 | Aurora Serverless v2 | 0.5 – 1 ACU | PostgreSQL 18.3, single AZ, no read replica, ~20GB storage |
-| ECR | 1 repository | Lifecycle policy: retain last 5 images |
+| ECR | N repositories | 1 per microservice, lifecycle: keep last 5 images |
 | S3 | 1 bucket | Standard storage class, no versioning |
 | SES | Sandbox mode | Only verified sender/receiver emails, no production approval needed |
 | SQS | 1 standard queue | Default settings, 4-day retention |
 | Security Groups | 3 minimum | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
 | IAM | ECS Task Role + Execution Role | S3, SES, SQS, ECR, CloudWatch Logs permissions |
-| GitHub Actions | 1 workflow | Build image → push to ECR → update ECS service |
+| GitHub Actions | N workflows | 1 per microservice (build → push to ECR → update ECS service) |
 
 ---
 
@@ -117,13 +128,13 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 |---|------|-----------------|
 | 1 | VPC | 10.0.0.0/16, 2 public + 2 private subnets across 2 AZs |
 | 2 | NAT Gateway | 1x single AZ |
-| 3 | ALB | HTTP 80 listener, target group with health check on /health |
+| 3 | ALB | HTTP 80 listener, path-based routing, N target groups with health check on /health |
 | 4 | Security Groups | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
-| 5 | ECS Cluster (EC2) | 1x t3.small, 20GB gp3, Amazon Linux 2023 ECS AMI, ASG min:1 max:1 |
-| 6 | ECS Task Definition | CPU: 512, Memory: 1024 MB, container port as per app |
-| 7 | ECS Service | 1 desired task, linked to ALB target group |
+| 5 | ECS Cluster (EC2) | 1x t3.xlarge, 40GB gp3, Amazon Linux 2023 ECS AMI, ASG min:1 max: based on N |
+| 6 | ECS Task Definitions | N task definitions, CPU: 256, Memory: 512 MB each, container port as per app |
+| 7 | ECS Services | N services (1 per microservice), 1 desired task each, linked to target groups |
 | 8 | Aurora Serverless v2 | PostgreSQL 18.3, 0.5–1 ACU, single AZ, no replica |
-| 9 | ECR | 1 repository, lifecycle: keep last 5 images |
+| 9 | ECR | N repositories (1 per microservice), lifecycle: keep last 5 images |
 | 10 | S3 | 1 bucket, standard tier, no versioning |
 | 11 | SES | Sandbox mode, verify sender/receiver emails |
 | 12 | SQS | 1 standard queue, default settings |
@@ -138,13 +149,13 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 | # | Item | Example |
 |---|------|---------|
-| 1 | ECR Repository URL | 123456789.dkr.ecr.region.amazonaws.com/dev-app-name |
-| 2 | ECS Cluster Name | dev-cluster |
-| 3 | ECS Service Name | dev-service |
-| 4 | IAM Deploy Role ARN | arn:aws:iam::ACCOUNT_ID:role/dev-github-deploy-role |
-| 5 | Aurora DB Endpoint | dev-cluster.cluster-xxx.region.rds.amazonaws.com |
+| 1 | ECR Repository URLs | 123456789.dkr.ecr.region.amazonaws.com/pci-{service-name}-dev (xN) |
+| 2 | ECS Cluster Name | pci-cluster-dev |
+| 3 | ECS Service Names | pci-{service-name}-dev (xN) |
+| 4 | IAM Deploy Role ARN | arn:aws:iam::ACCOUNT_ID:role/pci-github-deploy-dev |
+| 5 | Aurora DB Endpoint | pci-db-dev.cluster-xxx.region.rds.amazonaws.com |
 | 6 | Aurora DB Name + Credentials | Database name, username, password |
-| 7 | S3 Bucket Name | dev-app-files-bucket |
-| 8 | SQS Queue URL | https://sqs.region.amazonaws.com/ACCOUNT_ID/dev-queue |
+| 7 | S3 Bucket Name | pci-files-dev |
+| 8 | SQS Queue URL | https://sqs.region.amazonaws.com/ACCOUNT_ID/pci-queue-dev |
 | 9 | SES Verified Sender Email | [email] |
-| 10 | ALB DNS Name | dev-alb-123.region.elb.amazonaws.com |
+| 10 | ALB DNS Name | pci-alb-dev-123.region.elb.amazonaws.com |
