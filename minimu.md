@@ -111,16 +111,40 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 ---
 
-## Developer Prerequisites for ECS Deployment
+## What DevOps Team Needs to Prepare
 
-| # | What Developer Needs | Provided By | Details |
-|---|---------------------|-------------|---------|
-| 1 | ECR Repository URL | Infra/DevOps | e.g. 123456789.dkr.ecr.region.amazonaws.com/app-name |
-| 2 | ECS Cluster Name | Infra/DevOps | Name of the ECS cluster to deploy into |
-| 3 | ECS Service Name | Infra/DevOps | Service that runs the task |
-| 4 | Task Definition | Infra/DevOps | CPU, memory, container port, image URI, env vars |
-| 5 | IAM Role ARN (OIDC) or Access Keys | Infra/DevOps | For GitHub Actions to push to ECR + update ECS |
-| 6 | Environment Variables | Infra/DevOps | DB connection string, S3 bucket, SQS URL, SES sender |
-| 7 | Dockerfile | Developer | In the root of the repo |
-| 8 | GitHub Actions Workflow | Developer | Build → Push to ECR → Update ECS service |
-| 9 | GitHub Secrets | Developer | AWS credentials, ECR URL, cluster/service names stored as secrets |
+| # | Item | Config / Details |
+|---|------|-----------------|
+| 1 | VPC | 10.0.0.0/16, 2 public + 2 private subnets across 2 AZs |
+| 2 | NAT Gateway | 1x single AZ |
+| 3 | ALB | HTTP 80 listener, target group with health check on /health |
+| 4 | Security Groups | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
+| 5 | ECS Cluster (EC2) | 1x t3.medium, 30GB gp3, Amazon Linux 2023 ECS AMI |
+| 6 | ECS Task Definition | CPU: 1024, Memory: 2048 MB, container port as per app |
+| 7 | ECS Service | 1 desired task, linked to ALB target group |
+| 8 | Aurora Serverless v2 | PostgreSQL 15+, 0.5–2 ACU, single AZ, no replica |
+| 9 | ECR | 1 repository, lifecycle: keep last 5 images |
+| 10 | S3 | 1 bucket, standard tier, no versioning |
+| 11 | SES | Sandbox mode, verify sender/receiver emails |
+| 12 | SQS | 1 standard queue, default settings |
+| 13 | IAM — GitHub OIDC | OIDC provider for GitHub Actions, trusted to our repo only |
+| 14 | IAM — Deploy Role | Permissions: ECR push, ECS update service, register task def, pass role |
+| 15 | IAM — ECS Task Role | Permissions: S3, SES, SQS access for the running app |
+| 16 | IAM — ECS Execution Role | Permissions: ECR pull, CloudWatch Logs |
+
+---
+
+## What DevOps Team Needs to Share Back With Us
+
+| # | Item | Example |
+|---|------|---------|
+| 1 | ECR Repository URL | 123456789.dkr.ecr.region.amazonaws.com/app-name |
+| 2 | ECS Cluster Name | my-cluster |
+| 3 | ECS Service Name | my-service |
+| 4 | IAM Deploy Role ARN | arn:aws:iam::ACCOUNT_ID:role/github-deploy-role |
+| 5 | Aurora DB Endpoint | my-cluster.cluster-xxx.region.rds.amazonaws.com |
+| 6 | Aurora DB Name + Credentials | Database name, username, password |
+| 7 | S3 Bucket Name | my-app-files-bucket |
+| 8 | SQS Queue URL | https://sqs.region.amazonaws.com/ACCOUNT_ID/my-queue |
+| 9 | SES Verified Sender Email | [email] |
+| 10 | ALB DNS Name | my-alb-123.region.elb.amazonaws.com (for testing) |
