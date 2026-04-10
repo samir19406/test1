@@ -108,3 +108,19 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | Security Groups | 3 minimum | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
 | IAM | ECS Task Role + Execution Role | S3, SES, SQS, ECR, CloudWatch Logs permissions |
 | GitHub Actions | 1 workflow | Build image → push to ECR → update ECS service |
+
+---
+
+## Developer Prerequisites for ECS Deployment
+
+| # | What Developer Needs | Provided By | Details |
+|---|---------------------|-------------|---------|
+| 1 | ECR Repository URL | Infra/DevOps | e.g. 123456789.dkr.ecr.region.amazonaws.com/app-name |
+| 2 | ECS Cluster Name | Infra/DevOps | Name of the ECS cluster to deploy into |
+| 3 | ECS Service Name | Infra/DevOps | Service that runs the task |
+| 4 | Task Definition | Infra/DevOps | CPU, memory, container port, image URI, env vars |
+| 5 | IAM Role ARN (OIDC) or Access Keys | Infra/DevOps | For GitHub Actions to push to ECR + update ECS |
+| 6 | Environment Variables | Infra/DevOps | DB connection string, S3 bucket, SQS URL, SES sender |
+| 7 | Dockerfile | Developer | In the root of the repo |
+| 8 | GitHub Actions Workflow | Developer | Build → Push to ECR → Update ECS service |
+| 9 | GitHub Secrets | Developer | AWS credentials, ECR URL, cluster/service names stored as secrets |
