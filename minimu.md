@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
 
     subgraph MINIMUM["🟢 MINIMUM TO START TESTING"]
@@ -82,3 +83,4 @@ flowchart TB
     style DR stroke-dasharray: 5 5
     style PROD stroke-dasharray: 5 5
     style IPSEC stroke-dasharray: 5 5
+```
