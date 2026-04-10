@@ -1,9 +1,9 @@
 ```mermaid
 flowchart TB
 
-User[Users / QA Testers]
+User[Developers / QA Testers]
 
-subgraph AWS_Cloud[AWS Cloud - Minimum for Testing]
+subgraph AWS_Cloud["AWS Cloud - DEV Environment"]
 
 
 
@@ -28,8 +28,8 @@ subgraph AWS_Cloud[AWS Cloud - Minimum for Testing]
                 subgraph ASG[Auto Scaling Group]
                     EC2_1["EC2 Instance x1
                     ———
-                    t3.medium (2 vCPU / 4GB)
-                    30GB gp3 EBS
+                    t3.small (2 vCPU / 2GB)
+                    20GB gp3 EBS
                     Amazon Linux 2023 ECS AMI"]
                 end
             end
@@ -37,7 +37,7 @@ subgraph AWS_Cloud[AWS Cloud - Minimum for Testing]
             subgraph Aurora_Cluster["Aurora Serverless v2 PostgreSQL"]
                 MasterDB["(Master DB)
                 ———
-                Min 0.5 ACU / Max 2 ACU
+                Min 0.5 ACU / Max 1 ACU
                 PostgreSQL 15+
                 Single AZ (no replica)
                 20GB storage"]
@@ -91,16 +91,16 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 ---
 
-## Minimum Testing Configuration
+## DEV Environment — Minimum Configuration
 
 | Service | Config | Details |
 |---------|--------|---------|
 | VPC | 10.0.0.0/16 | 2 public subnets + 2 private subnets across 2 AZs |
-| NAT Gateway | 1x single AZ | Saves cost vs HA (1 per AZ) |
+| NAT Gateway | 1x single AZ | Single AZ to save cost |
 | ALB | 1x Application LB | HTTP 80 listener, test via ALB DNS name directly |
-| EC2 (ECS) | t3.medium | 2 vCPU, 4GB RAM, 30GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI |
-| ECS Task | 1 task | CPU: 1024 (1 vCPU), Memory: 2048 MB |
-| Aurora Serverless v2 | 0.5 – 2 ACU | PostgreSQL 15+, single AZ, no read replica, ~20GB storage |
+| EC2 (ECS) | t3.small | 2 vCPU, 2GB RAM, 20GB gp3 EBS, Amazon Linux 2023 ECS-optimized AMI |
+| ECS Task | 1 task | CPU: 512 (0.5 vCPU), Memory: 1024 MB |
+| Aurora Serverless v2 | 0.5 – 1 ACU | PostgreSQL 15+, single AZ, no read replica, ~20GB storage |
 | ECR | 1 repository | Lifecycle policy: retain last 5 images |
 | S3 | 1 bucket | Standard storage class, no versioning |
 | SES | Sandbox mode | Only verified sender/receiver emails, no production approval needed |
@@ -111,7 +111,7 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 ---
 
-## What DevOps Team Needs to Prepare
+## What DevOps Team Needs to Prepare (DEV)
 
 | # | Item | Config / Details |
 |---|------|-----------------|
@@ -119,10 +119,10 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | 2 | NAT Gateway | 1x single AZ |
 | 3 | ALB | HTTP 80 listener, target group with health check on /health |
 | 4 | Security Groups | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2 only) |
-| 5 | ECS Cluster (EC2) | 1x t3.medium, 30GB gp3, Amazon Linux 2023 ECS AMI |
-| 6 | ECS Task Definition | CPU: 1024, Memory: 2048 MB, container port as per app |
+| 5 | ECS Cluster (EC2) | 1x t3.small, 20GB gp3, Amazon Linux 2023 ECS AMI |
+| 6 | ECS Task Definition | CPU: 512, Memory: 1024 MB, container port as per app |
 | 7 | ECS Service | 1 desired task, linked to ALB target group |
-| 8 | Aurora Serverless v2 | PostgreSQL 15+, 0.5–2 ACU, single AZ, no replica |
+| 8 | Aurora Serverless v2 | PostgreSQL 15+, 0.5–1 ACU, single AZ, no replica |
 | 9 | ECR | 1 repository, lifecycle: keep last 5 images |
 | 10 | S3 | 1 bucket, standard tier, no versioning |
 | 11 | SES | Sandbox mode, verify sender/receiver emails |
@@ -134,17 +134,17 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 ---
 
-## What DevOps Team Needs to Share Back With Us
+## What DevOps Team Needs to Share Back With Us (DEV)
 
 | # | Item | Example |
 |---|------|---------|
-| 1 | ECR Repository URL | 123456789.dkr.ecr.region.amazonaws.com/app-name |
-| 2 | ECS Cluster Name | my-cluster |
-| 3 | ECS Service Name | my-service |
-| 4 | IAM Deploy Role ARN | arn:aws:iam::ACCOUNT_ID:role/github-deploy-role |
-| 5 | Aurora DB Endpoint | my-cluster.cluster-xxx.region.rds.amazonaws.com |
+| 1 | ECR Repository URL | 123456789.dkr.ecr.region.amazonaws.com/dev-app-name |
+| 2 | ECS Cluster Name | dev-cluster |
+| 3 | ECS Service Name | dev-service |
+| 4 | IAM Deploy Role ARN | arn:aws:iam::ACCOUNT_ID:role/dev-github-deploy-role |
+| 5 | Aurora DB Endpoint | dev-cluster.cluster-xxx.region.rds.amazonaws.com |
 | 6 | Aurora DB Name + Credentials | Database name, username, password |
-| 7 | S3 Bucket Name | my-app-files-bucket |
-| 8 | SQS Queue URL | https://sqs.region.amazonaws.com/ACCOUNT_ID/my-queue |
+| 7 | S3 Bucket Name | dev-app-files-bucket |
+| 8 | SQS Queue URL | https://sqs.region.amazonaws.com/ACCOUNT_ID/dev-queue |
 | 9 | SES Verified Sender Email | [email] |
-| 10 | ALB DNS Name | my-alb-123.region.elb.amazonaws.com (for testing) |
+| 10 | ALB DNS Name | dev-alb-123.region.elb.amazonaws.com |
