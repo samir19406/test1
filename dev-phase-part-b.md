@@ -64,8 +64,8 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment (ap-south-1 Mumbai)"]
 
             ECR["ECR
             ———
-            N+3 Repositories
-            (N backend + 3 frontend)
+            N+1 Repositories
+            (N backend + 1 frontend)
             Lifecycle: keep last 5 images"]
 
             Redis["ElastiCache Redis
@@ -93,8 +93,8 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment (ap-south-1 Mumbai)"]
     subgraph CICD[CI/CD]
         GitHub["GitHub Actions
         ———
-        N+3 Workflows
-        (N backend + 3 frontend)"]
+        N+1 Workflows
+        (N backend + 1 frontend)"]
     end
 
 end
@@ -126,12 +126,10 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 | # | Rule Type | Condition | Routes To | Details |
 |---|-----------|-----------|-----------|---------|
-| 1 | Host-based | `admin.*` | Admin Panel TG | Admin frontend (Next.js) |
-| 2 | Host-based | `internal.*` | Internal App TG | Internal management frontend (Next.js) |
-| 3 | Path-based | `/api/service-1/*` | Backend TG 1 | Backend microservice 1 |
-| 4 | Path-based | `/api/service-2/*` | Backend TG 2 | Backend microservice 2 |
-| 5 | Path-based | `/api/service-N/*` | Backend TG N | Backend microservice N |
-| 6 | Default | `*` (everything else) | Main Portal TG | Public-facing frontend (Next.js), handles N subdomains |
+| 1 | Path-based | `/api/service-1/*` | Backend TG 1 | Backend microservice 1 |
+| 2 | Path-based | `/api/service-2/*` | Backend TG 2 | Backend microservice 2 |
+| 3 | Path-based | `/api/service-N/*` | Backend TG N | Backend microservice N |
+| 4 | Default | `*` (everything else) | PCI Portal TG | Public-facing frontend (Next.js), handles N subdomains |
 
 ---
 
@@ -152,14 +150,11 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 | # | Service | Type | Tasks | Routing |
 |---|---------|------|-------|---------|
-| 1 | Main Portal | Frontend (Next.js) | 1 | Host: all subdomains (default) |
-| 2 | Admin Panel | Frontend (Next.js) | 1 | Host: `admin.*` |
-| 3 | Internal App | Frontend (Next.js) | 1 | Host: `internal.*` |
-| 4–N+3 | Microservices | Backend | 1 each | Path: `/api/{service}/*` |
+| 1 | PCI Portal | Frontend (Next.js) | 1 | Host: all subdomains (default) |
+| 2–N+1 | Microservices | Backend | 1 each | Path: `/api/{service}/*` |
 
 > Key Points:
-> - All subdomains share the same Main Portal frontend — subdomain is detected at runtime
-> - Admin and Internal are separate Next.js apps with their own subdomain
+> - All subdomains share the same PCI Portal frontend — subdomain is detected at runtime
 > - All backend microservices are shared — DB context switches per request based on subdomain
 > - 1 Aurora instance holds N databases — no separate DB instances per subdomain
 > - Subdomain-to-DB mapping is stored in a shared/master database or config
@@ -175,20 +170,19 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 |---------|--------|---------|
 | VPC | 10.0.0.0/16 | 2 public subnets + 2 private subnets across 2 AZs |
 | NAT Gateway | 1x single AZ | Single AZ |
-| ALB | 1x Application LB | HTTP 80, host-based + path-based routing |
+| ALB | 1x Application LB | HTTP 80, host-based routing (subdomains) + path-based routing (APIs) |
 | EC2 (ECS) | t3.2xlarge | 8 vCPU, 32GB RAM, 50GB gp3 EBS, Amazon Linux 2023 ECS AMI, ASG min:1 max:2 |
-| ECS — Frontend | 3 services | Main Portal + Admin Panel + Internal App (Next.js SSR), 1 task each |
+| ECS — Frontend | 1 service | PCI Portal (Next.js SSR), 1 task, subdomain-based multi-tenancy |
 | ECS — Backend | N services | 1 per microservice, 1 task each |
 | Aurora Serverless v2 | 0.5 – 2 ACU | PostgreSQL 18.3, single AZ, no replica, N databases (1 per subdomain) + 1 shared DB |
 | ElastiCache Redis | cache.t3.micro | 1 node, single AZ |
 | OpenSearch | t3.small.search | 1 node, single AZ, 10GB EBS |
-| ECR | N+3 repositories | N backend + 3 frontend, lifecycle: keep last 5 images |
+| ECR | N+1 repositories | N backend + 1 frontend, lifecycle: keep last 5 images |
 | S3 | 1 bucket | Standard tier, no versioning, folder per subdomain |
-| SES | Sandbox mode | Only verified sender/receiver emails |
 | SQS | 1 standard queue | Default settings, 4-day retention |
 | Security Groups | 5 minimum | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (inbound 5432 from EC2), Redis (inbound 6379 from EC2), OpenSearch (inbound 443 from EC2) |
-| IAM | ECS Task Role + Execution Role | S3, SES, SQS, ECR, CloudWatch Logs permissions |
-| GitHub Actions | N+3 workflows | N backend + 3 frontend (build → push to ECR → update ECS service) |
+| IAM | ECS Task Role + Execution Role | S3, SQS, ECR, CloudWatch Logs permissions |
+| GitHub Actions | N+1 workflows | N backend + 1 frontend (build → push to ECR → update ECS service) |
 
 ---
 
@@ -198,22 +192,21 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 |---|------|-----------------|
 | 1 | VPC | 10.0.0.0/16, 2 public + 2 private subnets across 2 AZs |
 | 2 | NAT Gateway | 1x single AZ |
-| 3 | ALB | HTTP 80 listener, host-based + path-based routing, N+3 target groups |
+| 3 | ALB | HTTP 80 listener, host-based routing (subdomains) + path-based routing (APIs), N+1 target groups |
 | 4 | Security Groups | ALB (inbound 80), EC2 (inbound from ALB only), Aurora (5432 from EC2), Redis (6379 from EC2), OpenSearch (443 from EC2) |
 | 5 | ECS Cluster (EC2) | t3.2xlarge, 50GB gp3, Amazon Linux 2023 ECS AMI, ASG min:1 max:2 |
-| 6 | ECS — Frontend | 3 services (Main Portal + Admin + Internal), 1 task each |
+| 6 | ECS — Frontend | 1 service (PCI Portal), 1 task |
 | 7 | ECS — Backend | N services, N task definitions |
 | 8 | Aurora Serverless v2 | PostgreSQL 18.3, 0.5–2 ACU, single AZ, no replica, N databases created inside |
 | 9 | ElastiCache Redis | cache.t3.micro, 1 node, single AZ |
 | 10 | OpenSearch | t3.small.search, 1 node, single AZ, 10GB EBS |
-| 11 | ECR | N+3 repositories (N backend + 3 frontend), lifecycle: keep last 5 images |
+| 11 | ECR | N+1 repositories (N backend + 1 frontend), lifecycle: keep last 5 images |
 | 12 | S3 | 1 bucket, standard tier, no versioning |
-| 13 | SES | Sandbox mode, verify sender/receiver emails |
-| 14 | SQS | 1 standard queue, default settings |
-| 15 | IAM — GitHub OIDC | OIDC provider for GitHub Actions, trusted to our repo only |
-| 16 | IAM — Deploy Role | Permissions: ECR push, ECS update service, register task def, pass role |
-| 17 | IAM — ECS Task Role | Permissions: S3, SES, SQS, Redis, OpenSearch access for the running app |
-| 18 | IAM — ECS Execution Role | Permissions: ECR pull, CloudWatch Logs |
+| 13 | SQS | 1 standard queue, default settings |
+| 14 | IAM — GitHub OIDC | OIDC provider for GitHub Actions, trusted to our repo only |
+| 15 | IAM — Deploy Role | Permissions: ECR push, ECS update service, register task def, pass role |
+| 16 | IAM — ECS Task Role | Permissions: S3, SQS, Redis, OpenSearch access for the running app |
+| 17 | IAM — ECS Execution Role | Permissions: ECR pull, CloudWatch Logs |
 
 ---
 
@@ -221,9 +214,9 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 
 | # | Item | Example |
 |---|------|---------|
-| 1 | ECR Repository URLs | 123456789.dkr.ecr.ap-south-1.amazonaws.com/pci-{service-name}-dev (xN+3) |
+| 1 | ECR Repository URLs | 123456789.dkr.ecr.ap-south-1.amazonaws.com/pci-{service-name}-dev (xN+1) |
 | 2 | ECS Cluster Name | pci-cluster-dev |
-| 3 | ECS Service Names | pci-{service-name}-dev (xN+3) |
+| 3 | ECS Service Names | pci-{service-name}-dev (xN+1) |
 | 4 | IAM Deploy Role ARN | arn:aws:iam::ACCOUNT_ID:role/pci-github-deploy-dev |
 | 5 | Aurora DB Endpoint | pci-db-dev.cluster-xxx.ap-south-1.rds.amazonaws.com |
 | 6 | Aurora DB Names + Credentials | N database names + master username/password |
@@ -231,8 +224,7 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | 8 | OpenSearch Endpoint | pci-search-dev.ap-south-1.es.amazonaws.com |
 | 9 | S3 Bucket Name | pci-files-dev |
 | 10 | SQS Queue URL | https://sqs.ap-south-1.amazonaws.com/ACCOUNT_ID/pci-queue-dev |
-| 11 | SES Verified Sender Email | [email] |
-| 12 | ALB DNS Name | pci-alb-dev-123.ap-south-1.elb.amazonaws.com |
+| 11 | ALB DNS Name | pci-alb-dev-123.ap-south-1.elb.amazonaws.com |
 
 ---
 
@@ -248,12 +240,11 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | 4 | ALB | 1x, 24/7 + LCU | $0.0225/hr + LCU | ~$18 |
 | 5 | Aurora Serverless v2 | 0.5–2 ACU avg, 24/7 (N DBs) | ~$0.14/ACU-hr | ~$51–$204 |
 | 6 | Aurora Storage | ~20GB (across N DBs) | $0.10/GB/mo | ~$2 |
-| 7 | ECR | N+3 repos, ~5GB total | $0.10/GB/mo | ~$1 |
+| 7 | ECR | N+1 repos, ~5GB total | $0.10/GB/mo | ~$1 |
 | 8 | ElastiCache Redis | cache.t3.micro, 24/7 | $0.017/hr | ~$12 |
 | 9 | OpenSearch | t3.small.search, 24/7 + 10GB | $0.036/hr + $0.135/GB | ~$28 |
 | 10 | S3 | ~10GB | $0.025/GB/mo | ~$1 |
-| 11 | SES | Sandbox, ~1K emails/mo | $0.10/1,000 emails | ~$0.10 |
-| 12 | SQS | ~100K requests/mo | $0.40/1M requests | ~$0 (free tier) |
+| 11 | SQS | ~100K requests/mo | $0.40/1M requests | ~$0 (free tier) |
 | | | | **Total (1 instance)** | **~$423–$576/mo** |
 | | | | **Total (2 instances)** | **~$689–$842/mo** |
 
@@ -262,7 +253,6 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 > - ASG max:2 means EC2 + EBS cost doubles when 2nd instance spins up (~$266 extra)
 > - Data transfer out to internet is additional (~$0.09/GB)
 > - S3 cost scales with storage usage and request volume (PUT/GET requests charged separately)
-> - SQS and SES are negligible for dev usage
 > - No domain or SSL costs included (testing via ALB DNS)
 
 ---
@@ -282,11 +272,10 @@ ECS_Cluster -- "3 Pulls image" --> ECR
 | 7 | CloudTrail | Audit logging — mandatory for govt compliance |
 | 8 | CloudWatch | Full monitoring, alarms, dashboards, log retention policies |
 | 9 | Secrets Manager | For DB credentials, API keys — no hardcoded secrets |
-| 10 | SES | Move out of sandbox — production email sending approval required |
-| 11 | Backup | Automated Aurora snapshots, S3 cross-region replication (optional) |
-| 12 | Security | MeitY/NIC compliance, data residency in India (ap-south-1), security audit trail |
-| 13 | Multi-AZ | All critical services (Aurora, NAT, EC2) across minimum 2 AZs |
-| 14 | Frontend Auto-Scaling | All 3 Next.js apps need auto-scaling under heavy traffic |
+| 10 | Backup | Automated Aurora snapshots, S3 cross-region replication (optional) |
+| 11 | Security | MeitY/NIC compliance, data residency in India (ap-south-1), security audit trail |
+| 12 | Multi-AZ | All critical services (Aurora, NAT, EC2) across minimum 2 AZs |
+| 13 | Frontend Auto-Scaling | PCI Portal (Next.js) needs auto-scaling under heavy traffic |
 
 ---
 
