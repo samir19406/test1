@@ -6,8 +6,7 @@ flowchart TB
 User["Users / Developers / QA
 ———
 pci.gov.in
-digipharmed.pci.gov.in
-admin.pci.gov.in"]
+digipharmed.pci.gov.in"]
 
 subgraph AWS_Cloud["AWS Cloud - DEV Environment (ap-south-1 Mumbai)"]
 
@@ -21,9 +20,11 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment (ap-south-1 Mumbai)"]
             Amazon Linux 2023
             Elastic IP attached
             ———
-            Docker + Docker Compose
             Nginx (reverse proxy)
-            4 containers running"]
+            Docker Compose (3 containers)
+            PCI Portal :3000
+            DigiPharmaEd :3001
+            PCI API :4000"]
         end
 
         subgraph Private_Subnets["Private Subnets (2 AZs min)"]
@@ -62,18 +63,14 @@ subgraph AWS_Cloud["AWS Cloud - DEV Environment (ap-south-1 Mumbai)"]
         GitHub["GitHub Actions
         ———
         1 Workflow
-        SSH into EC2 → pull code →
-        docker compose build →
-        docker compose up -d"]
+        SSH → pull → build → deploy"]
     end
 
 end
 
 %% Request Flow
-User -- "1 HTTP/HTTPS request" --> EC2
-
-%% Inside EC2 (conceptual)
-EC2 -. "Nginx routes by host header" .-> EC2
+User -- "1 HTTP request" --> EC2
+EC2 -. "Nginx routes by host/path" .-> EC2
 
 %% App to Data Flow
 EC2 -- "2 Reads/Writes" --> Aurora_Cluster
@@ -87,69 +84,27 @@ GitHub -- "SSH deploy" --> EC2
 
 ---
 
-## What Runs Inside the EC2 Instance
-
-```mermaid
-flowchart LR
-
-subgraph EC2_Instance["EC2 Instance (t3.xlarge)"]
-
-    Nginx["Nginx
-    (Reverse Proxy)
-    ———
-    Port 80/443
-    Host-based routing"]
-
-    subgraph Docker_Containers["Docker Compose — 4 Containers"]
-        FE1["PCI Portal
-        (Next.js SSR)
-        ———
-        Port 3000"]
-        FE2["DigiPharmaEd
-        (React SPA)
-        ———
-        Port 3001"]
-        FE3["Admin Panel
-        (React SPA)
-        ———
-        Port 3002"]
-        API["PCI API
-        (Node.js)
-        ———
-        Port 4000"]
-    end
-end
-
-Nginx -- "pci.gov.in" --> FE1
-Nginx -- "digipharmed.*" --> FE2
-Nginx -- "admin.*" --> FE3
-Nginx -- "/api/*" --> API
-```
-
----
-
 ## Application Overview
 
-| # | Application | Domain | Type | Internal Port | Description |
-|---|-------------|--------|------|---------------|-------------|
-| 1 | PCI Portal | pci.gov.in | Frontend (Next.js SSR) | 3000 | Public-facing Pharmacy Council of India website — information, notifications, approved colleges, regulations |
-| 2 | DigiPharmaEd | digipharmed.pci.gov.in | Frontend (React SPA) | 3001 | Login-based portal — routes to 5 role-based dashboards after authentication |
-| 3 | Admin Panel | admin.pci.gov.in | Frontend (React SPA) | 3002 | Internal admin panel for PCI staff to manage data, users, configurations |
-| 4 | PCI API | /api/* | Backend (Node.js) | 4000 | Single REST API serving all 3 frontends with role-based access control |
+| # | Application | Domain | Type | Description |
+|---|-------------|--------|------|-------------|
+| 1 | PCI Portal | pci.gov.in | Frontend (Next.js SSR) | Public-facing Pharmacy Council of India website — information, notifications, approved colleges, regulations |
+| 2 | DigiPharmaEd | digipharmed.pci.gov.in | Frontend (React SPA) | Login-based portal — routes to 5 role-based dashboards after authentication |
+| 3 | PCI API | /api/* | Backend (Node.js) | Single REST API serving both frontends with role-based access control |
 
 ---
 
-## DigiPharmaEd — Role-Based Portals (5)
+## DigiPharmaEd — Portal Configurations
 
-> All 5 portals are part of the same DigiPharmaEd frontend SPA. After login, the user is routed to their respective dashboard based on their role.
+> All portals are part of the DigiPharmaEd platform. After login/registration, the user is routed to their respective dashboard based on their role.
 
-| # | Portal / Role | Access | Key Functions |
-|---|---------------|--------|---------------|
-| 1 | Institution Portal | College/University login | Submit applications (new course, intake raise), upload documents, track approval status |
-| 2 | Inspector Portal | PCI-appointed inspectors | View assigned inspections, submit inspection reports, upload findings |
-| 3 | Student Portal | Registered pharmacy students | View registration status, download certificates, access academic records |
-| 4 | State Council Portal | State Pharmacy Council officials | Manage state-level registrations, view institution data, coordinate with PCI |
-| 5 | PCI Staff Portal | PCI internal staff | Review applications, assign inspectors, process approvals, generate reports |
+| # | Portal | Who | Description |
+|---|--------|-----|-------------|
+| 1 | Pharmacist Registration | Licensed pharmacists | Register as a licensed pharmacist, access continuing education and professional development resources |
+| 2 | Organisation Registration | Pharma Company / Retail Shop / Hospital / CRO | Job portal for pharma organisations |
+| 3 | Examining Authority Registration | Examining authorities | Register to conduct examinations and manage assessment processes for pharmacy education |
+| 4 | Student Registration | Pharmacy students | Access academic resources, track progress, manage educational journey |
+| 5 | Institute Registration | Pharmacy institutes | Manage programs, faculty, infrastructure, and compliance with regulatory requirements |
 
 ---
 
@@ -157,11 +112,10 @@ Nginx -- "/api/*" --> API
 
 | # | Rule Type | Condition | Proxies To | Details |
 |---|-----------|-----------|------------|---------|
-| 1 | Host-based | `pci.gov.in` / `www.pci.gov.in` | localhost:3000 | PCI Portal (Next.js SSR) |
-| 2 | Host-based | `digipharmed.pci.gov.in` | localhost:3001 | DigiPharmaEd SPA |
-| 3 | Host-based | `admin.pci.gov.in` | localhost:3002 | Admin Panel SPA |
-| 4 | Path-based | `/api/*` | localhost:4000 | PCI API backend |
-| 5 | Default | `*` (everything else) | localhost:3000 | Fallback to PCI Portal |
+| 1 | Host-based | `pci.gov.in` / `www.pci.gov.in` | PCI Portal (:3000) | Public-facing website (Next.js SSR) |
+| 2 | Host-based | `digipharmed.pci.gov.in` | DigiPharmaEd (:3001) | Login-based SPA with 5 role configs |
+| 3 | Path-based | `/api/*` | PCI API (:4000) | Single backend API |
+| 4 | Default | `*` (everything else) | PCI Portal (:3000) | Fallback to public website |
 
 ---
 
@@ -169,10 +123,10 @@ Nginx -- "/api/*" --> API
 
 | # | Step | What Happens |
 |---|------|-------------|
-| 1 | User visits digipharmed.pci.gov.in | Nginx routes to DigiPharmaEd SPA container (port 3001) |
+| 1 | User visits digipharmed.pci.gov.in | Nginx routes to DigiPharmaEd SPA container |
 | 2 | User logs in | SPA sends credentials to `/api/auth/login` |
 | 3 | API authenticates | Validates credentials, returns JWT with role claim |
-| 4 | SPA reads role from JWT | Routes user to the correct dashboard (Institution / Inspector / Student / State Council / PCI Staff) |
+| 4 | SPA reads role from JWT | Routes user to the correct dashboard (Pharmacist / Organisation / Examining Authority / Student / Institute) |
 | 5 | SPA calls role-specific APIs | All API calls include JWT — backend enforces role-based access control |
 | 6 | API processes request | Validates JWT, checks role permissions, queries single database, returns response |
 
@@ -184,15 +138,13 @@ Nginx -- "/api/*" --> API
 |---|-----------|------|---------------|---------|
 | 1 | PCI Portal | Frontend (Next.js SSR) | 3000 | Host: pci.gov.in (default) |
 | 2 | DigiPharmaEd | Frontend (React SPA) | 3001 | Host: digipharmed.pci.gov.in |
-| 3 | Admin Panel | Frontend (React SPA) | 3002 | Host: admin.pci.gov.in |
-| 4 | PCI API | Backend (Node.js) | 4000 | Path: /api/* |
+| 3 | PCI API | Backend (Node.js) | 4000 | Path: /api/* |
 
 > Key Points:
-> - All 4 containers run on a single EC2 instance via Docker Compose
-> - Nginx installed on EC2 acts as reverse proxy — routes by host header to the correct container
-> - `.env` file on EC2 holds DB credentials, Redis endpoint, S3 config, JWT secrets
-> - No ECS, no ECR, no ALB — Nginx on EC2 handles all routing
-> - For DEV: Elastic IP gives a stable public IP, domains can be pointed via /etc/hosts or DNS
+> - All 3 containers run on a single EC2 instance via Docker Compose
+> - Nginx on EC2 acts as reverse proxy — routes by host header to the correct container
+> - No ECS, no ECR, no ALB — simple single-server setup for DEV
+> - Elastic IP gives a stable public IP, domains can be pointed via DNS or /etc/hosts for testing
 
 ---
 
@@ -203,15 +155,15 @@ Nginx -- "/api/*" --> API
 | Service | Config | Details |
 |---------|--------|---------|
 | VPC | 10.0.0.0/16 | 1 public subnet + 2 private subnets (Aurora needs 2 AZs) |
-| EC2 | t3.xlarge | 4 vCPU, 16GB RAM, 50GB gp3 EBS, Amazon Linux 2023, Elastic IP, Docker + Docker Compose + Nginx installed |
-| Containers | 4 Docker containers | PCI Portal (:3000), DigiPharmaEd (:3001), Admin (:3002), API (:4000) — managed via docker-compose |
+| EC2 | t3.xlarge | 4 vCPU, 16GB RAM, 50GB gp3 EBS, Amazon Linux 2023, Elastic IP, Docker + Docker Compose + Nginx |
+| Containers | 3 Docker containers | PCI Portal (:3000), DigiPharmaEd (:3001), API (:4000) |
 | Aurora Serverless v2 | 0.5 – 2 ACU | PostgreSQL 16.x, single AZ, no replica, 1 database |
 | ElastiCache Redis | cache.t3.micro | 1 node, single AZ (sessions + caching) |
-| S3 | 1 bucket | Standard tier, no versioning, organized by folder (/documents, /uploads, /reports) |
+| S3 | 1 bucket | Standard tier, no versioning |
 | SQS | 1 standard queue | Default settings, 4-day retention |
-| Security Groups | 3 minimum | EC2 (inbound 80, 443, 22), Aurora (inbound 5432 from EC2), Redis (inbound 6379 from EC2) |
+| Security Groups | 3 minimum | EC2 (inbound 80, 443, 22), Aurora (5432 from EC2), Redis (6379 from EC2) |
 | IAM | EC2 Instance Role | S3, SQS, CloudWatch Logs permissions |
-| GitHub Actions | 1 workflow | SSH into EC2 → git pull → docker compose build → docker compose up -d |
+| GitHub Actions | 1 workflow | SSH into EC2 → pull → build → deploy |
 
 ---
 
@@ -263,13 +215,12 @@ Nginx -- "/api/*" --> API
 | | | | **Total** | **~$200–$353/mo** |
 
 > Notes:
-> - No ALB cost (~$18/mo saved) — Nginx on EC2 handles routing
-> - No NAT Gateway cost (~$44/mo saved) — EC2 is in public subnet with Elastic IP
+> - No ALB cost — Nginx on EC2 handles routing
+> - No NAT Gateway cost — EC2 is in public subnet with Elastic IP
 > - No ECR cost — images built directly on EC2
 > - Aurora cost range depends on ACU usage — lower end for light dev, higher for active testing
 > - Data transfer out to internet is additional (~$0.09/GB)
 > - No domain or SSL costs included (testing via Elastic IP, can add Let's Encrypt for free SSL)
-> - **~$200/mo savings compared to ECS + ALB setup**
 
 ---
 
@@ -282,13 +233,13 @@ Nginx -- "/api/*" --> API
 | 1 | Domain + SSL | Wildcard SSL cert for *.pci.gov.in (NIC-provided), Route 53 hosted zone, ACM for cert management |
 | 2 | ALB | Move from Nginx-on-EC2 to ALB for high availability, health checks, and auto-scaling |
 | 3 | ECS or Multi-EC2 | Move to ECS Fargate or multiple EC2 instances behind ALB for HA and scaling |
-| 4 | CloudFront | CDN in front of ALB — caches static assets (React SPAs), reduces SSR load, improves latency across India |
+| 4 | CloudFront | CDN in front of ALB — caches static assets, reduces SSR load, improves latency across India |
 | 5 | WAF | Mandatory for Indian govt — OWASP protection, rate limiting, IP filtering, bot protection |
 | 6 | Aurora | Higher ACU (min 2, max 16+), Multi-AZ with read replicas, automated backups, point-in-time recovery |
 | 7 | NAT Gateway | For private subnet EC2/ECS instances (1 per AZ) |
 | 8 | CloudTrail | Audit logging — mandatory for govt compliance |
 | 9 | CloudWatch | Full monitoring, alarms, dashboards, log retention policies |
-| 10 | Secrets Manager | For DB credentials, JWT secrets, API keys — no hardcoded secrets or .env files |
+| 10 | Secrets Manager | For DB credentials, JWT secrets, API keys — no hardcoded secrets |
 | 11 | Backup | Automated Aurora snapshots, S3 cross-region replication (optional) |
 | 12 | Security | MeitY/NIC compliance, data residency in India (ap-south-1), security audit trail |
 | 13 | Multi-AZ | All critical services (Aurora, EC2/ECS, NAT) across minimum 2 AZs |
@@ -296,4 +247,4 @@ Nginx -- "/api/*" --> API
 
 ---
 
-> ⚠️ **Note:** This infrastructure is for the development phase. The project has a simple architecture — 3 frontends + 1 backend API running as Docker containers on a single EC2 instance. No ECS, no ALB, no microservices complexity. For production, this should be migrated to a proper HA setup (ALB + ECS/multi-EC2). Infrastructure requirements should be reviewed as the project evolves.
+> ⚠️ **Note:** This infrastructure is for the development phase. The project has a simple architecture — 2 frontends + 1 backend API running as 3 Docker containers on a single EC2 instance with Nginx as reverse proxy. DigiPharmaEd serves 5 registration portals within the same platform. No ECS, no ALB, no microservices complexity. For production, this should be migrated to a proper HA setup (ALB + ECS/multi-EC2). Infrastructure requirements should be reviewed as the project evolves.
